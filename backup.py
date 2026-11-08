@@ -2,10 +2,9 @@ import hashlib
 import json
 import sys
 import tarfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from uuid import uuid4
 
 
 def create_backup(config_path):
@@ -32,11 +31,14 @@ def create_backup(config_path):
             raise ValueError(f"A mentés célja nem lehet a forrásmappán belül: {source}")
 
     destination.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_path = destination / f"{timestamp}-{uuid4().hex}"
-    with TemporaryDirectory(prefix=".backup-", dir=destination) as temporary:
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    backup_path = destination / timestamp
+    if backup_path.exists():
+        raise ValueError(f"Ebben a percben már készült mentés: {backup_path}")
+
+    with TemporaryDirectory(prefix=f".{timestamp}-", dir=destination) as temporary:
         staging = Path(temporary)
-        archive = staging / "backup.tar.gz"
+        archive = staging / f"backup_{timestamp}.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
             for index, source in enumerate(sources, start=1):
                 tar.add(source, arcname=f"{index:02d}-{source.name}")
