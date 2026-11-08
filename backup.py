@@ -1,29 +1,22 @@
+import argparse
 import hashlib
-import json
 import sys
 import tarfile
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from backup_config import CONFIG_PATH, load_config, resolve_path
+from config_menu import run_config_menu
+
 
 def create_backup(config_path):
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    if not isinstance(config, dict):
-        raise ValueError("A konfigurációnak JSON-objektumnak kell lennie.")
-
-    sources = config.get("sources")
-    destination = config.get("destination")
-    if not isinstance(sources, list) or not sources:
+    config = load_config(config_path)
+    if not config["sources"]:
         raise ValueError("A sources mezőben adj meg legalább egy mappát.")
 
-    def resolve_path(value):
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError("Minden elérési út legyen nem üres szöveg.")
-        return (config_path.parent / Path(value).expanduser()).resolve()
-
-    sources = [resolve_path(source) for source in sources]
-    destination = resolve_path(destination)
+    sources = [resolve_path(config_path, source) for source in config["sources"]]
+    destination = resolve_path(config_path, config.get("destination"))
     for source in sources:
         if not source.is_dir():
             raise ValueError(f"A forrásmappa nem található: {source}")
@@ -36,7 +29,7 @@ def create_backup(config_path):
     if backup_path.exists():
         raise ValueError(f"Ebben a percben már készült mentés: {backup_path}")
 
-    with TemporaryDirectory(prefix=f".{timestamp}-", dir=destination) as temporary:
+    with TemporaryDirectory(prefix=f"folyamatban-{timestamp}-", dir=destination) as temporary:
         staging = Path(temporary)
         archive = staging / f"backup_{timestamp}.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
@@ -55,9 +48,26 @@ def create_backup(config_path):
     return backup_path
 
 
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description="Mappák mentése tömörített archívumba.")
+    parser.add_argument(
+        "--config", action="store_true", help="A mentendő mappák kezelése."
+    )
+    args = parser.parse_args()
+    if args.config:
+        try:
+            run_config_menu(CONFIG_PATH)
+        except FileNotFoundError:
+            sys.exit("Másold a config.example.json fájlt config.json néven.")
+        except (OSError, ValueError, RuntimeError) as error:
+            sys.exit(f"Konfigurációs hiba: {error}")
+        return
+
     try:
-        config_path = Path(__file__).resolve().with_name("config.json")
-        print(f"Mentés elkészült: {create_backup(config_path)}")
+        print(f"Mentés elkészült: {create_backup(CONFIG_PATH)}")
     except (OSError, ValueError, RuntimeError, tarfile.TarError) as error:
         sys.exit(f"Mentési hiba: {error}")
+
+
+if __name__ == "__main__":
+    main()
