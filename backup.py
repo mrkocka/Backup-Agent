@@ -29,10 +29,29 @@ def create_backup(config_path):
     except (OSError, ValueError, RuntimeError, tarfile.TarError) as error:
         finish_report(report, started, error)
         try:
-            failure_path = log_path.parent / f"backup_failed_{uuid4().hex}.json"
-            write_report(failure_path, report)
+            destination = resolve_path(config_path, config.get("destination"))
+            destination.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.fromisoformat(report["started_at"]).strftime(
+                "%Y-%m-%d_%H-%M"
+            )
+            with TemporaryDirectory(
+                prefix=f"folyamatban-{timestamp}-", dir=destination
+            ) as temporary:
+                staging = Path(temporary)
+                failure_directory = destination / staging.name.replace("folyamatban-", "hiba-", 1)
+                report["archive_name"] = None
+                report["archive_size_bytes"] = None
+                report["backup_directory"] = str(failure_directory)
+                write_report(staging / f"backup_{timestamp}.json", report)
+                staging.rename(failure_directory)
         except OSError as report_error:
             report["report_error"] = str(report_error)
+            try:
+                write_report(
+                    log_path.parent / f"backup_failed_{uuid4().hex}.json", report
+                )
+            except OSError as fallback_error:
+                report["report_error"] += f"; Tartalék jelentés: {fallback_error}"
         raise
     finally:
         log_report(logger, report)
