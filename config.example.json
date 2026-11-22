@@ -1,4 +1,5 @@
 {
   "sources": ["~/Documents/mentendo-mappa"],
-  "destination": "~/Mentések"
+  "destination": "~/Mentések",
+  "log_file": "/var/log/backup-agent/backup.log"
 }

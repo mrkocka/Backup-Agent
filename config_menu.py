@@ -40,8 +40,24 @@ def remove_source(config_path, config):
     print("Forrásmappa eltávolítva a konfigurációból.")
 
 
+def change_log_file(config_path, config):
+    value = input("Új naplófájl útvonala (üres = vissza): ").strip()
+    if not value:
+        return
+
+    log_path = resolve_path(config_path, value)
+    if log_path.is_dir():
+        raise ValueError("Fájlelérési utat adj meg, például logs/backup.log.")
+    for source in config["sources"]:
+        if log_path.is_relative_to(resolve_path(config_path, source)):
+            raise ValueError("A naplófájl nem lehet a mentendő mappán belül.")
+
+    save_config(config_path, {**config, "log_file": value})
+    print("Naplófájl útvonala módosítva.")
+
+
 def run_config_menu(config_path):
-    actions = {"1": add_source, "2": remove_source}
+    actions = {"1": add_source, "2": remove_source, "3": change_log_file}
     try:
         while True:
             config = load_config(config_path)
@@ -51,7 +67,8 @@ def run_config_menu(config_path):
             if not config["sources"]:
                 print("  A lista üres.")
 
-            print("\n1. Hozzáadás   2. Eltávolítás   0. Kilépés")
+            print(f"\nNaplófájl: {config.get('log_file', 'logs/backup.log')}")
+            print("\n1. Hozzáadás   2. Eltávolítás   3. Napló helye   0. Kilépés")
             choice = input("Választás: ").strip()
             if choice == "0":
                 return

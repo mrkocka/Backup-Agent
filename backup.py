@@ -1,5 +1,7 @@
 import argparse
 import hashlib
+from time import perf_counter
+from uuid import uuid4
 import sys
 import tarfile
 from datetime import datetime
@@ -8,16 +10,44 @@ from tempfile import TemporaryDirectory
 
 from backup_config import CONFIG_PATH, load_config, resolve_path
 from config_menu import run_config_menu
+from backup_reporting import open_log, finish_report, write_report, log_report
 
 
 def create_backup(config_path):
+    config_path = Path(config_path).resolve()
+    started = perf_counter()
+    report = {
+        "started_at": datetime.now().astimezone().isoformat(),
+        "archive_name": None,
+        "archive_size_bytes": None,
+    }
     config = load_config(config_path)
+    log_path = resolve_path(config_path, config.get("log_file", "logs/backup.log"))
+    logger = open_log(log_path)
+    try:
+        return build_backup(config_path, config, report, started, log_path)
+    except (OSError, ValueError, RuntimeError, tarfile.TarError) as error:
+        finish_report(report, started, error)
+        try:
+            failure_path = log_path.parent / f"backup_failed_{uuid4().hex}.json"
+            write_report(failure_path, report)
+        except OSError as report_error:
+            report["report_error"] = str(report_error)
+        raise
+    finally:
+        log_report(logger, report)
+
+
+def build_backup(config_path, config, report, started, log_path):
     if not config["sources"]:
         raise ValueError("A sources mezőben adj meg legalább egy mappát.")
 
     sources = [resolve_path(config_path, source) for source in config["sources"]]
     destination = resolve_path(config_path, config.get("destination"))
+    report["sources"] = [str(source) for source in sources]
     for source in sources:
+        if log_path.is_relative_to(source):
+            raise ValueError("A naplófájl nem lehet a mentendő mappán belül.")
         if not source.is_dir():
             raise ValueError(f"A forrásmappa nem található: {source}")
         if destination.is_relative_to(source):
@@ -43,6 +73,11 @@ def create_backup(config_path):
         archive.with_suffix(".gz.sha256").write_text(
             f"{checksum.hexdigest()}  {archive.name}\n", encoding="ascii"
         )
+        report["archive_name"] = archive.name
+        report["archive_size_bytes"] = archive.stat().st_size
+        report["backup_directory"] = str(backup_path)
+        finish_report(report, started)
+        write_report(staging / f"backup_{timestamp}.json", report)
         staging.rename(backup_path)
 
     return backup_path
